@@ -47,6 +47,21 @@ def getGeoPointPosition(geoObj, space='worldSpace'):
     return pointPos
 
 
+def vertexLoc():
+    """
+    Returns all vertex positions of selected object, in worldspace
+    Dependencies: get_mesh_fn
+    :return :array of vertex locations
+    """
+    sceneObjects = cmds.ls(selection = True)
+    Mesh = get_mesh_fn(sceneObjects[0])
+    mPoint = om.MPointArray()
+    mSpace = om.MSpace.kObject
+    locations = []
+    Mesh.getPoints(mPoint, mSpace)
+    for x in range(0, mPoint.length()):
+        locations.append([mPoint[x][0], mPoint[x][1], mPoint[x][2]])
+    return locations
 
 def setGeoPointPos(geoObj, positions=[], space='worldSpace'):
     """
@@ -60,7 +75,6 @@ def setGeoPointPos(geoObj, positions=[], space='worldSpace'):
     """
 
     #Create an empty objects/variables to store positions, functionSet and space
-    mPoint = OpenMaya.MPointArray()
     mSpace = None
     #Add the list to the MPointArray
 
@@ -148,7 +162,7 @@ selectionList = cmds.ls( orderedSelection=True )
 
 if len( selectionList ) >= 2:
 
-    print 'Selected items: %s' % ( selectionList )
+    print ('Selected items: {}'.format(selectionList))
 
     targetName = selectionList[0]
 
@@ -156,13 +170,13 @@ if len( selectionList ) >= 2:
 
     for objectName in selectionList:
 
-        print 'Constaining %s towards %s' % ( objectName, targetName )
+        print ('Constraining {} towards {}'.format( objectName, targetName ))
 
         cmds.aimConstraint( targetName, objectName, aimVector=[0, 1, 0] )
 
 else:
 
-    print 'Please select two or more objects.'
+    print ('Please select two or more objects.')
 
 #========================================================================================================
 """ starts using maya.cmds from here"""
@@ -249,6 +263,31 @@ def createRandomInstance(number=10, x = 10, y = 10, z = 10, scale = [1.0, 1.0], 
 
     cmds.xform( instanceGroupName, centerPivots=True )
 
+def get_mesh_fn(target):
+    """ get mesh function set for the given target
+    :param target: dag path of the mesh
+    :return MFnMesh """
+
+    if isinstance(target, str) or isinstance(target, unicode):
+        slls = om.MSelectionList()
+        slls.add(target)
+        ground_path = om.MDagPath()
+        slls.getDagPath(0, ground_path)
+        ground_path.extendToShapeDirectlyBelow(0)
+        ground_node = ground_path.node()
+    elif isinstance(target, om.MObject):
+        ground_node = target
+        ground_path = target
+    elif isinstance(target, om.MDagPath):
+        ground_node = target.node()
+        ground_path = target
+    else:
+        raise TypeError('Must be of type str, MObject or MDagPath, is type: {}'.format(type(target)))
+
+    if ground_node.hasFn(om.MFn.kMesh):
+        return om.MFnMesh(ground_path)
+    else:
+        raise TypeError('Target must be of type kMesh')
 
 class masterUI:
     """

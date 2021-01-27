@@ -1,22 +1,31 @@
 from maya import OpenMaya, OpenMayaMPx
+import traceback
 
 class AttrSpec(object):
-    def createfnattr(self):
+    def attributetype(self):
+        print ("not imp 1")
         raise NotImplementedError()
     def getvalue(self, datahandle):
+        print ("not imp 2")
         raise NotImplementedError()
     def setvalue(self, datahandle, value):
+        print ("not imp 3")
         raise NotImplementedError()
     def create(self, fnattr, longname, shortname):
+        print ("not imp 4")
         raise NotImplementedError()
     def setdefault(self,fnattr, value):
+        print ("not imp 5")
         raise NotImplementedError()
     def allow_fields(self):
         return False
+    def valuetype(self):
+        print ("not imp 6")
+        raise NotImplementedError()
 
 
 class _FloatAttr(AttrSpec):
-    def createfnattr(self):
+    def attributetype(self):
         return OpenMaya.MFnNumericAttribute()
     def getvalue(self,datahandle):
         return datahandle.asFloat()
@@ -29,7 +38,7 @@ class _FloatAttr(AttrSpec):
 A_FLOAT = _FloatAttr()
 
 class _StringAttr(AttrSpec):
-    def createfnattr(self):
+    def attributetype(self):
         return OpenMaya.MFnTypedAttribute()
     def getvalue(self, datahandle):
         return datahandle.asString()
@@ -43,7 +52,7 @@ class _StringAttr(AttrSpec):
 A_STRING = _StringAttr()
 
 class _EnumAttr(AttrSpec):
-    def createfnattr(self):
+    def attributetype(self):
         return OpenMaya.MFnEnumAttribute()
     def getvalue(self, datahandle):
         return datahandle.asInt()
@@ -58,7 +67,7 @@ class _EnumAttr(AttrSpec):
 A_ENUM = _EnumAttr()
 
 class _ColorAttr(AttrSpec):
-    def createfnattr(self):
+    def attributetype(self):
         return OpenMaya.MFnNumericAttribute()
     def getvalue(self, datahandle):
         return datahandle.asFloatVector()
@@ -69,6 +78,34 @@ class _ColorAttr(AttrSpec):
     def setdefault(self, fnattr, value):
         fnattr.setDefault(*value)
 A_COLOR = _ColorAttr()
+
+# class _MatrixAttr(AttrSpec):
+#     def attributetype(self):
+#         return OpenMaya.MFnMatrixAttribute()
+#     def getValue(self, datahandle):
+#         return datahandle.asMesh()
+#     def setValue(self, datahandle, value):
+#         raise NotImplementedError()
+#     def create(self, fnattr, longname, shortname):      #requires ,om.MFnData.kMesh perhaps?
+#         return fnattr.create(longname, shortname)
+#
+# A_MATRIX = _MatrixAttr()
+
+class _MeshAttr(AttrSpec):
+    def attributetype(self):
+        return OpenMaya.MFnTypedAttribute()
+    def getvalue(self, datahandle):
+        return datahandle
+    def setvalue(self, datahandle, meshObject):
+        return datahandle.setMObject(meshObject)
+    def create(self, fnattr, longname, shortname):
+        print ("initializing A_MESH.create")
+        return fnattr.create(longname, shortname, OpenMaya.MFnData.kMesh)
+    def valuetype(self):
+        return OpenMaya.MFnData.kMesh
+
+A_MESH = _MeshAttr()                    #variable holding the outcome of _MeshAttr(AttrSpec), which is a function.
+
 
 class NodeSpec(object):
     def nodebase(self):
@@ -92,7 +129,7 @@ class _DependsNode(NodeSpec):
 NT_DEPENDSNODE = _DependsNode()
 
 # def create_attr(nodeclass, attrspec, ln, san, affectors=(), default=None):
-#     attr = attrspec.createfnattr() #1
+#     attr = attrspec.attributetype() #1
 #     plug = attrspec.create(attr, ln, sn) #2
 #
 #     if default is not None:
@@ -126,13 +163,15 @@ class _TransformNode(NodeSpec):
 NT_TRANSFORMNODE = _TransformNode()
 
 def create_attrmaker(attrspec, ln, sn, affectors=(), default=None, transformer=None, fields=()):
+    print ("attrspec: {}".format(str(attrspec)))
     if not attrspec.allow_fields() and fields:
         raise RuntimeError('Fields not allowed for {}'.format(attrspec))
 
 
     def createattr(nodeclass):
-        fnattr = attrspec.createfnattr()
-        attrobj = attrspec.create(fnattr, ln, sn)
+        fnattr = attrspec.attributetype()
+        print ("initializing attr creation")
+        attrobj = attrspec.create(fnattr, ln, sn )
 
         for name, value in fields:
             fnattr.addField(name,value)
@@ -162,26 +201,67 @@ def float_input(ln, sn, **kwargs):
 def float_output(ln, sn, **kwargs):
     return create_attrmaker(A_FLOAT, ln, sn, **kwargs)
 
+def mesh_input(ln, sn, **kwargs):
+    print ("initializing mesh input")
+    try:
+        return create_attrmaker(A_MESH, ln, sn, **kwargs)
+    except:
+        traceback.print_stack()
+
+def mesh_output(ln, sn, **kwargs):
+    try:
+        return create_attrmaker(A_MESH, ln,sn, **kwargs)
+    except:
+        traceback.print_stack()
+
 def create_node(nodespec, name, typeid, attrmakers):
+    print ("initializing create node")
     attr_to_spec = {}
     outattr_to_xformdata = {}
 
     def compute(mnode, plug, datablock):
-        attrname = plug.name().split('.')[-1]
-        xformdata = outattr_to_xformdata.get(attrname)
-        if xformdata is None:
-            return OpenMaya.MStatus.kUnknownParameter # this is not gonna work, outdated, switch to exception
-        xformer, affectors = xformdata
-        invals = []
-        for inname in affectors:
-            inplug = getattr(nodetype,inname)
-            indata = datablock.inputValue(inplug)
-            inval = attr_to_spec[inname].getvalue(indata)
-            invals.append(inval)
-        outval = xformer(*invals)
-        outhandle = datablock.outputValue(plug)
-        attr_to_spec[attrname].setvalue(outhandle,outval)
-        datablock.setClean(plug)
+        try:
+            attrname = plug.name().split('.')[-1]               #holds attribute long name as key: Spec as attribute
+            xformdata = outattr_to_xformdata.get(attrname)      #outattribute long name as key, [transformer, affectors]
+                                                                # as tuple
+        except:
+            traceback.print_stack()
+
+        try:
+            if xformdata is None:
+                return OpenMaya.MStatus.kUnknownParameter       # this is not gonna work, outdated, switch to exception
+        except:
+            traceback.print_stack()
+
+        try:
+            xformer, affectors = xformdata
+            invals = []
+            for inname in affectors:
+                inplug = getattr(nodetype, inname)
+                indata = datablock.inputValue(inplug)
+                try:
+                    inval = attr_to_spec[inname].getvalue(indata)
+                except Exception as e:
+                    print(e)
+                    traceback.print_stack()
+                invals.append(inval)
+        except:
+            traceback.print_stack()
+
+        try:
+            outval = xformer(*invals)
+            outhandle = datablock.outputValue(plug)
+
+        except:
+            traceback.print_stack()
+
+        try:
+            attr_to_spec[attrname].setvalue(outhandle, outval)
+            datablock.setClean(plug)
+        except Exception as e:
+            print (e)
+            print(attr_to_spec[attrname].setvalue(outhandle, outval))
+            traceback.print_stack()
 
     methods = {'compute': compute}
     nodetype = type(name, nodespec.nodebase(), methods)

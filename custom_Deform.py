@@ -27,7 +27,7 @@ sin = make_transformer(math.sin)
 cosine = make_transformer(math.cos)
 
 
-def register_circler(plugin):
+def register_stressNode(plugin):
     inputnames = ['input', 'scale', 'frames']
     reg, dereg = create_node(NT_DEPENDSNODE, 'circler', 0x60005, [
         float_input('input', 'in'),
@@ -50,7 +50,7 @@ def _toplugin(mobject):
 
 def initializePlugin(mobject):
     plugin = _toplugin(mobject)
-    register_circler(plugin)
+    register_stressNode(plugin)
 
 def uninitializePlugin(mobject):
     plugin = _toplugin(mobject)
